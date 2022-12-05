@@ -125,56 +125,64 @@ exports.isBound = async (req, res, next) => {
  * }
  */
 exports.bindAddress = async (req, res, next) => {
-  let { address, addressToBind, chain, message, signature } = req.body;
-
-  // Check if valid address
   try {
-    address = ethers.utils.getAddress(address);
-    addressToBind = ethers.utils.getAddress(addressToBind);
-  } catch {
-    return res.status(400).json({
-      message: "Invalid address",
-    });
-  }
+     let { address, addressToBind, chain, message, signature } = req.body;
 
-  // Verify if caller is owner of addressToBind using signature
-  if (!verifySignature(message, signature, addressToBind)) {
-    return res.status(401).json({
-      message: "Unauthorized",
-    });
-  }
+      // Check if valid address
+      try {
+        address = ethers.utils.getAddress(address);
+        addressToBind = ethers.utils.getAddress(addressToBind);
+      } catch {
+        return res.status(400).json({
+          message: "Invalid address",
+        });
+      }
 
-  // Verify if addressToBind is not already bound to another address
-  let user = await User.findOne({ address: address });
+      // Verify if caller is owner of addressToBind using signature
+      if (!verifySignature(message, signature, addressToBind)) {
+        return res.status(401).json({
+          message: "Unauthorized",
+        });
+      }
 
-  if (!user) {
-    await User.create({
-      address: address,
-      boundedAddresses: [{ address: addressToBind, chain: chain }],
-    });
-  } else {
-    let boundedAddress = await User.findOne({
-      address: address,
-      "boundedAddresses.address": addressToBind,
-      "boundedAddresses.chain": chain,
-    });
+      // Verify if addressToBind is not already bound to another address
+      let user = await User.findOne({ address: address });
 
-    if (boundedAddress) {
-      return res.status(400).json({
-        message: "Address already bound",
+      if (!user) {
+        await User.create({
+          address: address,
+          boundedAddresses: [{ address: addressToBind, chain: chain }],
+        });
+      } else {
+        let boundedAddress = await User.findOne({
+          address: address,
+          "boundedAddresses.address": addressToBind,
+          "boundedAddresses.chain": chain,
+        });
+
+        if (boundedAddress) {
+          return res.status(400).json({
+            message: "Address already bound",
+          });
+        } else {
+          user.boundedAddresses.push({
+            address: addressToBind,
+            chain: chain,
+          });
+          await user.save();
+        }
+      }
+
+      return res.status(200).json({
+        message: `Address ${addressToBind} bound to ${address}`,
       });
-    } else {
-      user.boundedAddresses.push({
-        address: addressToBind,
-        chain: chain,
-      });
-      await user.save();
-    }
+  } catch (ex) {
+    console.log('bindAddress', ex);
+    return res.status(500).json({
+      message: `Something's wrong. Please contact administrator for further actions.`
+    });
   }
-
-  return res.status(200).json({
-    message: `Address ${addressToBind} bound to ${address}`,
-  });
+  
 };
 
 /**
