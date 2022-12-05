@@ -154,94 +154,107 @@ exports.redeemReward = async (req, res, next) => {
   });
 
   let hasNFT = false;
+  let user = null;
+  try {
+    user = await Users.findOne({ address: address });
+    
+    if(!user) {
+      console.log('Log error:', 'User not found in address, proceed to search by boundedAddress');
+      // Then fallback to find in boundedAddresses instead
+      user = await Users.findOne({ boundedAddresses: {$elemMatch: {address: address} }});
+    }
 
-  let user = await Users.findOne({ address: address });
-  console.log("🚀 | exports.redeemReward= | user", user);
+    console.log("🚀 | exports.redeemReward= | user", user);
 
-  if (!user) {
-    return res.status(400).json({
-      message: "User not found",
-    });
-  }
+    if (!user) {
+      return res.status(400).json({
+        message: "User not found",
+      });
+    }
 
-  let boundedAddresses = user.boundedAddresses.map(
-    (address) => address.address
-  );
+    let boundedAddresses = user.boundedAddresses.map(
+      (address) => address.address
+    );
 
-  for (let collection of collectionIdentifiers) {
-    for (let address of boundedAddresses) {
-      let { isHolderOfCollection } = await isHolder(
-        collection[0],
-        collection[1],
-        address
-      );
-      if (isHolderOfCollection) {
-        hasNFT = true;
+    for (let collection of collectionIdentifiers) {
+      for (let address of boundedAddresses) {
+        let { isHolderOfCollection } = await isHolder(
+          collection[0],
+          collection[1],
+          address
+        );
+        if (isHolderOfCollection) {
+          hasNFT = true;
+          break;
+        }
+      }
+      if (hasNFT) {
         break;
       }
     }
-    if (hasNFT) {
-      break;
+
+    if (!hasNFT) {
+      return res.status(400).json({
+        message: "User does not own NFT",
+      });
     }
-  }
 
-  if (!hasNFT) {
-    return res.status(400).json({
-      message: "User does not own NFT",
+    // Find Reward with reward_id and address
+    let reward = await Reward.findOne({
+      campaignId: campaignId,
     });
-  }
 
-  // Find Reward with reward_id and address
-  let reward = await Reward.findOne({
-    campaignId: campaignId,
-  });
+    // Check if reward exists
+    if (!reward) {
+      return res.status(400).json({
+        message: "Reward not found",
+      });
+    }
 
-  // Check if reward exists
-  if (!reward) {
-    return res.status(400).json({
-      message: "Reward not found",
-    });
-  }
+    let code = reward.availableCodes[0];
+    // Check if user has already claimed reward
+    if (campaign.claimedAddresses.includes(address)) {
+      return res.status(200).json({
+        message: "Reward already redeemed",
+        code: code,
+      });
+    }
 
-  let code = reward.availableCodes[0];
-  // Check if user has already claimed reward
-  if (campaign.claimedAddresses.includes(address)) {
+    campaign.remaining -= 1;
+    campaign.claimedAddresses.push(address);
+    await campaign.save();
+
+    // Check if reward is started
+    if (Date.now() < campaign.start_date) {
+      return res.status(400).json({
+        message: "Reward not started",
+      });
+    }
+
+    // Check if reward is expired
+    if (campaign.end_date < Date.now()) {
+      return res.status(400).json({
+        message: "Reward expired",
+      });
+    }
+
+    console.log("🚀 | exports.redeemReward= | user", user);
+    // Redeem reward
+    user.claimedRewards.push(reward);
+    await user.save();
+    // reward.quantity -= 1;
+    // reward.quantity_used += 1;
+    // await reward.save();
+
     return res.status(200).json({
-      message: "Reward already redeemed",
+      message: "Reward redeemed",
       code: code,
     });
+
+  } catch (error) {
+    console.log('err', error)
   }
-
-  campaign.remaining -= 1;
-  campaign.claimedAddresses.push(address);
-  await campaign.save();
-
-  // Check if reward is started
-  if (Date.now() < campaign.start_date) {
-    return res.status(400).json({
-      message: "Reward not started",
-    });
-  }
-
-  // Check if reward is expired
-  if (campaign.end_date < Date.now()) {
-    return res.status(400).json({
-      message: "Reward expired",
-    });
-  }
-
-  console.log("🚀 | exports.redeemReward= | user", user);
-  // Redeem reward
-  user.claimedRewards.push(reward);
-  await user.save();
-  // reward.quantity -= 1;
-  // reward.quantity_used += 1;
-  // await reward.save();
-
-  return res.status(200).json({
-    message: "Reward redeemed",
-    code: code,
-  });
+  
 };
 
 // TODO: hasClaimed

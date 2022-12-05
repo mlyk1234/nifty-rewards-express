@@ -125,64 +125,56 @@ exports.isBound = async (req, res, next) => {
  * }
  */
 exports.bindAddress = async (req, res, next) => {
+  let { address, addressToBind, chain, message, signature } = req.body;
+
+  // Check if valid address
   try {
-     let { address, addressToBind, chain, message, signature } = req.body;
-
-      // Check if valid address
-      try {
-        address = ethers.utils.getAddress(address);
-        addressToBind = ethers.utils.getAddress(addressToBind);
-      } catch {
-        return res.status(400).json({
-          message: "Invalid address",
-        });
-      }
-
-      // Verify if caller is owner of addressToBind using signature
-      if (!verifySignature(message, signature, addressToBind)) {
-        return res.status(401).json({
-          message: "Unauthorized",
-        });
-      }
-
-      // Verify if addressToBind is not already bound to another address
-      let user = await User.findOne({ address: address });
-
-      if (!user) {
-        await User.create({
-          address: address,
-          boundedAddresses: [{ address: addressToBind, chain: chain }],
-        });
-      } else {
-        let boundedAddress = await User.findOne({
-          address: address,
-          "boundedAddresses.address": addressToBind,
-          "boundedAddresses.chain": chain,
-        });
-
-        if (boundedAddress) {
-          return res.status(400).json({
-            message: "Address already bound",
-          });
-        } else {
-          user.boundedAddresses.push({
-            address: addressToBind,
-            chain: chain,
-          });
-          await user.save();
-        }
-      }
-
-      return res.status(200).json({
-        message: `Address ${addressToBind} bound to ${address}`,
-      });
-  } catch (ex) {
-    console.log('bindAddress', ex);
-    return res.status(500).json({
-      message: `Something's wrong. Please contact administrator for further actions.`
+    address = ethers.utils.getAddress(address);
+    addressToBind = ethers.utils.getAddress(addressToBind);
+  } catch {
+    return res.status(400).json({
+      message: "Invalid address",
     });
   }
-  
+
+  // Verify if caller is owner of addressToBind using signature
+  if (!verifySignature(message, signature, addressToBind)) {
+    return res.status(401).json({
+      message: "Unauthorized",
+    });
+  }
+
+  // Verify if addressToBind is not already bound to another address
+  let user = await User.findOne({ address: address });
+
+  if (!user) {
+    await User.create({
+      address: address,
+      boundedAddresses: [{ address: addressToBind, chain: chain }],
+    });
+  } else {
+    let boundedAddress = await User.findOne({
+      address: address,
+      "boundedAddresses.address": addressToBind,
+      "boundedAddresses.chain": chain,
+    });
+
+    if (boundedAddress) {
+      return res.status(400).json({
+        message: "Address already bound",
+      });
+    } else {
+      user.boundedAddresses.push({
+        address: addressToBind,
+        chain: chain,
+      });
+      await user.save();
+    }
+  }
+
+  return res.status(200).json({
+    message: `Address ${addressToBind} bound to ${address}`,
+  });
 };
 
 /**
@@ -279,27 +271,34 @@ exports.refreshNfts = async (req, res, next) => {
     });
   }
 
-  const chain = "ETH";
-  let totalData = [];
-  for (let boundedAddress of query.boundedAddresses) {
-    let data = await getNFTSfromTATUM(
-      boundedAddress.chain,
-      boundedAddress.address
+  // Resolve app crashed
+  try {
+    const chain = "ETH";
+    let totalData = [];
+    for (let boundedAddress of query.boundedAddresses) {
+      let data = await getNFTSfromTATUM(
+        boundedAddress.chain,
+        boundedAddress.address
+      );
+      data.map((collection) => {
+        collection.chain = boundedAddress.chain;
+        collection.collectionIdentifier = `${boundedAddress.chain}-${collection.contractAddress}`;
+      });
+      totalData = totalData.concat(data);
+    }
+  
+    // Cache data from TATUM to User Collection
+    await User.findOneAndUpdate(
+      { address },
+      { nftsCache: totalData, cacheLastUpdated: Date.now() }
     );
-    data.map((collection) => {
-      collection.chain = boundedAddress.chain;
-      collection.collectionIdentifier = `${boundedAddress.chain}-${collection.contractAddress}`;
+    return res.status(200).json({
+      message: "NFTS refreshed",
     });
-    totalData = totalData.concat(data);
+  } catch (err) {
+    console.error('err', err?.response.data?.message)
+    return res.status(400).json({
+      message: err?.response.data?.message,
+    });
   }
-
-  // Cache data from TATUM to User Collection
-  await User.findOneAndUpdate(
-    { address },
-    { nftsCache: totalData, cacheLastUpdated: Date.now() }
-  );
-
-  return res.status(200).json({
-    message: "NFTS refreshed",
-  });
 };
