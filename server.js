@@ -57,6 +57,7 @@ const jsdocOptions = {
 const userRouter = require("./routes/User");
 const collectionRoute = require("./routes/Collection");
 const campaignRouter = require("./routes/Campaign");
+const bannerRouter = require("./routes/Banner");
 const rewardRouter = require("./routes/Reward");
 const merchantRouter = require("./routes/Merchant");
 
@@ -94,6 +95,7 @@ expressJSDocSwagger(app)(jsdocOptions);
 app.use("/api/v1/user", userRouter);
 app.use("/api/v1/collection", collectionRoute);
 app.use("/api/v1/campaign", campaignRouter);
+app.use("/api/v1/banner", bannerRouter);
 app.use("/api/v1/reward", rewardRouter);
 app.use("/api/v1/merchant", merchantRouter);
 
