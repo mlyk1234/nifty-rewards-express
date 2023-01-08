@@ -11,19 +11,36 @@ const Campaign = require("../models/Campaigns.model");
  * @param {*} address
  * @returns
  */
-async function isHolder(chain, contractAddress, address) {
+async function isHolder(chain, contractAddress, address, protocol) {
   const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
   let resp;
-  try {
-    resp = await axios.get(
-      `https://eth-mainnet.g.alchemy.com/nft/v2/${ALCHEMY_API_KEY}/isHolderOfCollection`,
-
-      { params: { wallet: address, contractAddress: contractAddress } }
-    );
-  } catch (e) {
-    console.log(e);
+  if(protocol === "ERC721") {
+    try {
+      resp = await axios.get(
+        `https://eth-mainnet.g.alchemy.com/nft/v2/${ALCHEMY_API_KEY}/isHolderOfCollection`,
+  
+        { params: { wallet: address, contractAddress: contractAddress } }
+      );
+    } catch (e) {
+      console.log(e);
+    }
+    return resp.data;
+  } else if(protocol === "ERC1155") {
+    console.log('is EIP-1155');
+    try {
+      _listOwnerOfToken = await axios.get(
+        `https://eth-mainnet.g.alchemy.com/nft/v2/${ALCHEMY_API_KEY}/getOwnersForToken`,
+  
+        { params: { contractAddress: contractAddress[0], tokenId: contractAddress[1] } }
+      );
+      const { data } = _listOwnerOfToken;
+      resp = data.owners.includes(address.toLowerCase());
+      
+    } catch (e) {
+      console.log(e);
+    }
+    return { isHolderOfCollection: resp };
   }
-  return resp.data;
 }
 
 /**
@@ -176,16 +193,32 @@ exports.redeemReward = async (req, res, next) => {
       (address) => address.address
     );
 
+    // ERC721 Standards
     for (let collection of collectionIdentifiers) {
       for (let address of boundedAddresses) {
-        let { isHolderOfCollection } = await isHolder(
-          collection[0],
-          collection[1],
-          address
-        );
-        if (isHolderOfCollection) {
-          hasNFT = true;
-          break;
+        if(collection[0] === "1") {
+          let { isHolderOfCollection } = await isHolder(
+            collection[0],
+            collection[1],
+            address,
+            "ERC721"
+          );
+          if (isHolderOfCollection) {
+            hasNFT = true;
+            break;
+          }
+        } else if(collection[0] === "1155") {
+          const tokenData = collection[1].split("=");
+          let { isHolderOfCollection } = await isHolder(
+            collection[0],
+            tokenData,
+            address,
+            "ERC1155"
+          );
+          if (isHolderOfCollection) {
+            hasNFT = true;
+            break;
+          }
         }
       }
       if (hasNFT) {
